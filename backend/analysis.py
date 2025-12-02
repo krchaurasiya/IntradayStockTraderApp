@@ -2,39 +2,55 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 
-# NOTE: This module expects a data provider. For the MVP we show how to use yfinance (commented).
-# If you want real-time intraday data use a paid API & replace get_intraday_series implementation below.
+import yfinance as yf
+import pandas as pd
 
 def get_intraday_series(symbol, timeframe='5m'):
-    # \"\"\"Return a pandas DataFrame with columns: datetime, open, high, low, close, volume\"\"\"
-    # Example using yfinance (uncomment if yfinance installed and internet available)
-    import yfinance as yf
-    period = '5d'
+    period_map = {
+        '1m': '1d',
+        '5m': '5d',
+        '15m': '5d',
+        '30m': '1mo',
+        '1h': '2mo'
+    }
+
     interval = timeframe
-    data = yf.download(symbol, period=period, interval=interval, progress=False)
-    data = data.reset_index().rename(columns={'Datetime':'datetime'})
-    data['datetime'] = data['Datetime'].astype(str)
-    df = data[['Datetime','Open','High','Low','Close','Volume']]
-    df.columns = ['datetime','open','high','low','close','volume']
-    return df
-    # For offline/demo: generate synthetic data for last 120 intervals
-    now = dt.datetime.utcnow()
-    periods = 120
-    rng = pd.date_range(end=now, periods=periods, freq=timeframe.upper())
-    close = (100 + np.cumsum(np.random.randn(periods))).round(2)
-    open_ = close + np.random.randn(periods).round(2)
-    high = np.maximum(open_, close) + np.abs(np.random.rand(periods)).round(2)
-    low = np.minimum(open_, close) - np.abs(np.random.rand(periods)).round(2)
-    volume = (np.random.randint(1000, 10000, size=periods)).astype(int)
-    df = pd.DataFrame({
-        'datetime': rng.astype(str),
-        'open': open_,
-        'high': high,
-        'low': low,
-        'close': close,
-        'volume': volume
-    })
-    return df
+    period = period_map.get(timeframe, '5d')
+
+    data = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=False)
+
+
+    # ✅ FIX 1: Flatten MultiIndex columns if present
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = [col[0] for col in data.columns]
+
+    # ✅ FIX 2: Move index into a real column
+    data.reset_index(inplace=True)
+
+    # ✅ FIX 3: Safely detect datetime column
+    if 'Datetime' in data.columns:
+        data['datetime'] = data['Datetime'].astype(str)
+    elif 'Date' in data.columns:
+        data['datetime'] = data['Date'].astype(str)
+    else:
+        raise Exception("No datetime column found in yfinance data")
+
+    # ✅ FIX 4: Rename for frontend
+    data.rename(columns={
+        'Open': 'open',
+        'High': 'high',
+        'Low': 'low',
+        'Close': 'close',
+        'Volume': 'volume'
+    }, inplace=True)
+
+    # ✅ FIX 5: Select only clean JSON-safe columns
+    data = data[['datetime', 'open', 'high', 'low', 'close', 'volume']]
+    data = data.dropna()
+
+    return data
+
+
 
 def sma(series, period):
     return series.rolling(period).mean()

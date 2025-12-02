@@ -6,12 +6,25 @@ app = Flask(__name__)
 
 @app.route('/api/quote')
 def quote():
-    symbol = request.args.get('symbol')
+    symbol = request.args.get('symbol', 'RELIANCE.NS')
     timeframe = request.args.get('timeframe', '5m')
-    if not symbol:
-        return jsonify({"error":"symbol required"}),400
+
     df = get_intraday_series(symbol, timeframe)
-    return jsonify(df.to_dict(orient='records'))
+
+    # ✅ Force native Python types (JSON-safe)
+    records = []
+    for _, row in df.iterrows():
+        records.append({
+            "datetime": str(row["datetime"]),
+            "open": float(row["open"]),
+            "high": float(row["high"]),
+            "low": float(row["low"]),
+            "close": float(row["close"]),
+            "volume": int(row["volume"])
+        })
+
+    return jsonify(records)
+
 
 @app.route('/api/fundamentals')
 def fundamentals():
@@ -42,3 +55,31 @@ def scan():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
+    
+from datetime import datetime
+
+trade_log = []
+
+@app.route('/api/trade', methods=['POST'])
+def trade():
+    data = request.json
+
+    trade = {
+        "id": len(trade_log) + 1,
+        "symbol": data.get("symbol"),
+        "side": data.get("side"),
+        "qty": data.get("qty"),
+        "sl": data.get("sl"),
+        "tp": data.get("tp"),
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+    trade_log.append(trade)
+
+    return jsonify({
+        "status": "success",
+        "trade": trade
+    })
+@app.route('/api/trades', methods=['GET'])
+def trades():
+    return jsonify(trade_log)
